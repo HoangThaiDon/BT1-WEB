@@ -201,3 +201,193 @@
   color: var(--text-muted);
   padding: 0 6px;
 }
+
+/* =========================================================
+   HỆ THỐNG BUFFS TRÊN BÀN CỜ
+   ========================================================= */
+
+/* Phần tử Buff trên ô cờ */
+.board-buff {
+  position: absolute;
+  inset: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 1.35rem;
+  z-index: 1;
+  pointer-events: none;
+  animation: buffFloat 2s ease-in-out infinite, buffGlow 2s infinite alternate;
+  user-select: none;
+  transition: transform var(--transition-fast);
+}
+
+@media (max-width: 600px) {
+  .board-buff {
+    inset: 3px;
+    font-size: 0.95rem;
+  }
+}
+
+.cell:hover .board-buff {
+  transform: scale(1.15);
+}
+
+/* Các loại Buff cụ thể */
+.board-buff.buff-shield {
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(14, 165, 233, 0.1) 70%);
+  border: 1.5px solid rgba(56, 189, 248, 0.7);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.6), inset 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+.board-buff.buff-revive {
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.35) 0%, rgba(16, 185, 129, 0.1) 70%);
+  border: 1.5px solid rgba(52, 211, 153, 0.7);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.6), inset 0 0 8px rgba(52, 211, 153, 0.4);
+}
+
+.board-buff.buff-double_step {
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.35) 0%, rgba(245, 158, 11, 0.1) 70%);
+  border: 1.5px solid rgba(251, 191, 36, 0.7);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.6), inset 0 0 8px rgba(251, 191, 36, 0.4);
+}
+
+@keyframes buffFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes buffGlow {
+  0% { filter: brightness(0.95); }
+  100% { filter: brightness(1.25); }
+}
+
+/* Huy hiệu Buff gắn trên Quân cờ */
+.piece.has-shield {
+  filter: drop-shadow(0 0 8px #38bdf8);
+}
+
+.piece.has-speed {
+  filter: drop-shadow(0 0 8px #fbbf24);
+}
+
+.piece.has-shield.has-speed {
+  filter: drop-shadow(0 0 6px #38bdf8) drop-shadow(0 0 6px #fbbf24);
+}
+
+.piece-badge-shield {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  font-size: 0.85rem;
+  background: rgba(14, 165, 233, 0.9);
+  border: 1px solid #38bdf8;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 6px #38bdf8;
+  z-index: 5;
+  animation: pulseDot 1.5s infinite;
+}
+
+.piece-badge-speed {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  font-size: 0.85rem;
+  background: rgba(245, 158, 11, 0.9);
+  border: 1px solid #fbbf24;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 6px #fbbf24;
+  z-index: 5;
+  animation: pulseDot 1.5s infinite;
+}
+
+@media (max-width: 600px) {
+  .piece-badge-shield, .piece-badge-speed {
+    width: 14px;
+    height: 14px;
+    font-size: 0.65rem;
+  }
+}
+
+/* Gợi ý đi 2 ô (Double Step Hint) */
+.cell.valid-move.step-2::after {
+  box-shadow: 0 0 12px #fbbf24, 0 0 4px var(--accent-green);
+  border: 1.5px solid #fbbf24;
+}
+
+.cell.valid-capture.step-2::after {
+  border: 2.5px dashed var(--accent-red);
+  box-shadow: 0 0 12px var(--accent-red), 0 0 6px #fbbf24;
+}
+
+/* Bảng hướng dẫn Buffs & Nghĩa Trang (Sidebar) */
+.buff-legend-box {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  margin-top: 12px;
+}
+
+.buff-legend-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #93c5fd;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.buff-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+
+.buff-legend-item:last-child {
+  margin-bottom: 0;
+}
+
+.buff-legend-icon {
+  font-size: 1.1rem;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Khung Quân Đã Tử Trận (Graveyard) */
+.graveyard-container {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-height: 24px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.graveyard-badge {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+

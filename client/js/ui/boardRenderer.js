@@ -1,5 +1,5 @@
 /**
- * Board Renderer: Trình dựng giao diện bàn cờ 9x9
+ * Board Renderer: Trình dựng giao diện bàn cờ 9x9 và hiển thị Buffs, hiệu ứng quân cờ
  */
 class BoardRenderer {
   /**
@@ -83,20 +83,52 @@ class BoardRenderer {
   }
 
   /**
-   * Cập nhật toàn bộ giao diện bàn cờ từ ma trận dữ liệu
+   * Cập nhật toàn bộ giao diện bàn cờ từ ma trận quân cờ và ma trận Buffs
    * @param {Array<Array<Object|null>>} boardGrid 
+   * @param {Array<Array<string|null>>} [buffsGrid]
    */
-  renderBoard(boardGrid) {
+  renderBoard(boardGrid, buffsGrid = null) {
     for (let r = 0; r < CONFIG.BOARD_SIZE; r++) {
       for (let c = 0; c < CONFIG.BOARD_SIZE; c++) {
         const cellDom = this.cellElements[r][c];
         const pieceData = boardGrid[r][c];
+        const buffType = buffsGrid ? buffsGrid[r][c] : null;
 
         cellDom.innerHTML = '';
 
+        // 1. Render Buff trên ô (nếu có và ô chưa có quân cờ)
+        if (buffType && !pieceData) {
+          const buffInfo = GameRules.BUFF_INFO[buffType];
+          const buffDiv = document.createElement('div');
+          buffDiv.className = `board-buff buff-${buffType.toLowerCase()}`;
+          buffDiv.textContent = buffInfo ? buffInfo.symbol : '⭐';
+          buffDiv.title = buffInfo ? `${buffInfo.name}: ${buffInfo.desc}` : buffType;
+          cellDom.appendChild(buffDiv);
+        }
+
+        // 2. Render Quân cờ (nếu có)
         if (pieceData) {
           const pieceDiv = document.createElement('div');
           pieceDiv.className = `piece ${pieceData.side.toLowerCase()}`;
+
+          // Kiểm tra hiệu ứng Buff của quân cờ
+          if (pieceData.shield && pieceData.shield > 0) {
+            pieceDiv.classList.add('has-shield');
+            const shieldBadge = document.createElement('div');
+            shieldBadge.className = 'piece-badge-shield';
+            shieldBadge.textContent = '🛡️';
+            shieldBadge.title = 'Có Khiên Thêm Mạng: Chặn 1 đòn chí mạng!';
+            pieceDiv.appendChild(shieldBadge);
+          }
+
+          if (pieceData.doubleStepCharges && pieceData.doubleStepCharges > 0) {
+            pieceDiv.classList.add('has-speed');
+            const speedBadge = document.createElement('div');
+            speedBadge.className = 'piece-badge-speed';
+            speedBadge.textContent = '⚡';
+            speedBadge.title = `Tốc Hành: Có thể đi 2 ô (còn ${pieceData.doubleStepCharges} lượt)`;
+            pieceDiv.appendChild(speedBadge);
+          }
 
           const img = document.createElement('img');
           img.src = CONFIG.PIECE_ASSETS[pieceData.side][pieceData.type];
@@ -121,8 +153,8 @@ class BoardRenderer {
   }
 
   /**
-   * Đánh dấu các ô đi được hợp lệ (Gợi ý 8 hướng)
-   * @param {Array<{row: number, col: number, isCapture: boolean}>} validMoves 
+   * Đánh dấu các ô đi được hợp lệ (Gợi ý 8 hướng, hỗ trợ cự ly 1 ô và 2 ô)
+   * @param {Array<{row: number, col: number, isCapture: boolean, step?: number}>} validMoves 
    */
   showValidMoves(validMoves) {
     validMoves.forEach(m => {
@@ -132,6 +164,11 @@ class BoardRenderer {
           cellDom.classList.add('valid-capture');
         } else {
           cellDom.classList.add('valid-move');
+        }
+
+        // Đánh dấu cự ly 2 ô
+        if (m.step === 2) {
+          cellDom.classList.add('step-2');
         }
       }
     });
@@ -160,7 +197,7 @@ class BoardRenderer {
   clearHighlights() {
     for (let r = 0; r < CONFIG.BOARD_SIZE; r++) {
       for (let c = 0; c < CONFIG.BOARD_SIZE; c++) {
-        this.cellElements[r][c].classList.remove('selected', 'valid-move', 'valid-capture');
+        this.cellElements[r][c].classList.remove('selected', 'valid-move', 'valid-capture', 'step-2');
       }
     }
   }

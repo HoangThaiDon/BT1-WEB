@@ -54,6 +54,37 @@
     [PIECE_TYPES.PAPER]: PIECE_TYPES.ROCK      // Lá ăn Đấm
   });
 
+  // Hằng số các loại Buff trên bàn cờ
+  const BUFF_TYPES = Object.freeze({
+    SHIELD: 'SHIELD',           // Thêm mạng (Khiên hộ mệnh)
+    REVIVE: 'REVIVE',           // Hồi sinh đồng đội
+    DOUBLE_STEP: 'DOUBLE_STEP'  // Tốc hành đi 2 ô
+  });
+
+  const BUFF_INFO = Object.freeze({
+    [BUFF_TYPES.SHIELD]: {
+      id: 'SHIELD',
+      name: 'Thêm Mạng',
+      symbol: '🛡️',
+      color: '#38bdf8',
+      desc: 'Chặn 1 đòn chí mạng từ đối phương, giữ quân an toàn'
+    },
+    [BUFF_TYPES.REVIVE]: {
+      id: 'REVIVE',
+      name: 'Hồi Sinh Đồng Đội',
+      symbol: '✨',
+      color: '#34d399',
+      desc: 'Hồi sinh 1 quân cờ đã tử trận về căn cứ'
+    },
+    [BUFF_TYPES.DOUBLE_STEP]: {
+      id: 'DOUBLE_STEP',
+      name: 'Đi 2 Ô',
+      symbol: '⚡',
+      color: '#fbbf24',
+      desc: 'Tăng tầm di chuyển lên tối đa 2 ô theo 8 hướng'
+    }
+  });
+
   /**
    * Kiểm tra quân tấn công có ăn được quân bị tấn công không
    * @param {string} attackerType - Loại quân tấn công (ROCK/PAPER/SCISSORS)
@@ -151,11 +182,45 @@
   }
 
   /**
+   * Khởi tạo bảng buff 9x9 với 6 buff mặc định bố trí đối xứng chiến thuật
+   * @returns {Array<Array<string|null>>}
+   */
+  function createInitialBuffs() {
+    const buffs = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => null)
+    );
+
+    // 6 Buff đặt đối xứng chiến thuật trên bàn cờ ở hàng 3 và hàng 5:
+    // Hàng 3 (gần Xanh):
+    buffs[3][2] = BUFF_TYPES.SHIELD;       // c6 (Shield)
+    buffs[3][4] = BUFF_TYPES.DOUBLE_STEP;  // e6 (Đi 2 ô)
+    buffs[3][6] = BUFF_TYPES.REVIVE;       // g6 (Hồi sinh)
+
+    // Hàng 5 (gần Đỏ):
+    buffs[5][2] = BUFF_TYPES.REVIVE;       // c4 (Hồi sinh)
+    buffs[5][4] = BUFF_TYPES.DOUBLE_STEP;  // e4 (Đi 2 ô)
+    buffs[5][6] = BUFF_TYPES.SHIELD;       // g4 (Shield)
+
+    return buffs;
+  }
+
+  /**
+   * Bản sao sâu của ma trận buff
+   * @param {Array<Array<string|null>>} buffs 
+   * @returns {Array<Array<string|null>>}
+   */
+  function cloneBuffs(buffs) {
+    if (!buffs) return createInitialBuffs();
+    return buffs.map(row => [...row]);
+  }
+
+  /**
    * Lấy danh sách các nước đi hợp lệ của 1 quân tại (fromRow, fromCol)
+   * Có tính đến buff Đi 2 ô (nếu piece.doubleStepCharges > 0)
    * @param {Array<Array<Object|null>>} board 
    * @param {number} fromRow 
    * @param {number} fromCol 
-   * @returns {Array<{row: number, col: number, isCapture: boolean, targetPiece: Object|null}>}
+   * @returns {Array<{row: number, col: number, isCapture: boolean, targetPiece: Object|null, step: number}>}
    */
   function getValidMoves(board, fromRow, fromCol) {
     if (!isValidPosition(fromRow, fromCol)) return [];
@@ -163,37 +228,44 @@
     if (!piece) return [];
 
     const validMoves = [];
+    const maxSteps = (piece.doubleStepCharges && piece.doubleStepCharges > 0) ? 2 : 1;
 
     for (const dir of DIRECTIONS) {
-      const toRow = fromRow + dir.dr;
-      const toCol = fromCol + dir.dc;
+      for (let step = 1; step <= maxSteps; step++) {
+        const toRow = fromRow + dir.dr * step;
+        const toCol = fromCol + dir.dc * step;
 
-      if (!isValidPosition(toRow, toCol)) continue;
+        if (!isValidPosition(toRow, toCol)) break;
 
-      const targetPiece = board[toRow][toCol];
+        const targetPiece = board[toRow][toCol];
 
-      if (!targetPiece) {
-        // Ô trống: Đi được 1 ô theo hướng bất kỳ
-        validMoves.push({
-          row: toRow,
-          col: toCol,
-          isCapture: false,
-          targetPiece: null
-        });
-      } else {
-        // Ô có quân:
-        if (targetPiece.side === piece.side) {
-          // Cùng phe: Không thể đi vào
-          continue;
+        if (!targetPiece) {
+          // Ô trống: Đi được
+          validMoves.push({
+            row: toRow,
+            col: toCol,
+            isCapture: false,
+            targetPiece: null,
+            step: step
+          });
         } else {
-          // Khác phe: Kiểm tra luật Oẳn Tù Tì
-          if (canCapture(piece.type, targetPiece.type)) {
-            validMoves.push({
-              row: toRow,
-              col: toCol,
-              isCapture: true,
-              targetPiece: targetPiece
-            });
+          // Ô có quân:
+          if (targetPiece.side === piece.side) {
+            // Cùng phe: Không thể đi vào hoặc nhảy qua
+            break;
+          } else {
+            // Khác phe: Kiểm tra luật Oẳn Tù Tì
+            if (canCapture(piece.type, targetPiece.type)) {
+              validMoves.push({
+                row: toRow,
+                col: toCol,
+                isCapture: true,
+                targetPiece: targetPiece,
+                step: step
+              });
+            }
+            // Không thể đi xuyên qua quân đối phương
+            break;
           }
         }
       }
@@ -338,8 +410,212 @@
    * @param {Array<Array<Object|null>>} board 
    * @returns {Array<Array<Object|null>>}
    */
+  /**
+   * Tạo bản sao sâu của bàn cờ
+   * @param {Array<Array<Object|null>>} board 
+   * @returns {Array<Array<Object|null>>}
+   */
   function cloneBoard(board) {
     return board.map(row => row.map(cell => (cell ? { ...cell } : null)));
+  }
+
+  /**
+   * Tìm vị trí xuất hiện thích hợp nhất để hồi sinh quân cờ
+   * Ưu tiên: Căn cứ chính -> Hàng 1 gần căn cứ -> Hàng 2 -> Bất kỳ ô trống
+   * @param {Array<Array<Object|null>>} board 
+   * @param {string} side 
+   * @returns {{row: number, col: number}|null}
+   */
+  function findSpawnPositionForSide(board, side) {
+    const base = side === SIDES.RED ? BASES.RED : BASES.BLUE;
+    // 1. Kiểm tra căn cứ chính
+    if (!board[base.row][base.col]) {
+      return { row: base.row, col: base.col };
+    }
+
+    // 2. Tìm trong hàng xuất phát (hàng 8 cho Đỏ, hàng 0 cho Xanh)
+    const homeRow = side === SIDES.RED ? 8 : 0;
+    const colOrder = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    colOrder.sort((a, b) => Math.abs(a - base.col) - Math.abs(b - base.col));
+
+    for (const c of colOrder) {
+      if (!board[homeRow][c]) {
+        return { row: homeRow, col: c };
+      }
+    }
+
+    // 3. Tìm trong hàng kế cận (hàng 7 cho Đỏ, hàng 1 cho Xanh)
+    const rank2Row = side === SIDES.RED ? 7 : 1;
+    for (const c of colOrder) {
+      if (!board[rank2Row][c]) {
+        return { row: rank2Row, col: c };
+      }
+    }
+
+    // 4. Tìm ô trống bất kỳ
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (!board[r][c]) {
+          return { row: r, col: c };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Áp dụng nước đi tích hợp toàn bộ hệ thống Buffs:
+   * - Nhặt Buff (Shield, Revive, Double Step)
+   * - Khiên hộ mệnh chống bị ăn quân
+   * - Hồi sinh quân tử trận
+   * - Tiêu hao charge đi 2 ô
+   * 
+   * @param {Array<Array<Object|null>>} board - Ma trận quân cờ
+   * @param {Array<Array<string|null>>} buffs - Ma trận buff
+   * @param {Object} graveyard - { RED: Array, BLUE: Array }
+   * @param {Object} teamBuffs - { RED: { reviveReserve: number }, BLUE: { reviveReserve: number } }
+   * @param {Object} from - { row, col }
+   * @param {Object} to - { row, col }
+   * @returns {Object} Kết quả chi tiết của nước đi
+   */
+  function applyMoveWithBuffs(board, buffs, graveyard, teamBuffs, from, to) {
+    const movedPiece = board[from.row][from.col];
+    if (!movedPiece) return null;
+
+    const targetPiece = board[to.row][to.col];
+    let collectedBuff = null;
+    let shieldDefended = false;
+    let capturedPiece = null;
+    let revivedPiece = null;
+    let revivePos = null;
+    let usedReviveReserve = false;
+
+    // 1. Kiểm tra nếu ô đích có quân địch (Tấn công)
+    if (targetPiece && targetPiece.side !== movedPiece.side) {
+      // Kiểm tra xem quân địch có Khiên Thêm Mạng (Shield) không
+      if (targetPiece.shield && targetPiece.shield > 0) {
+        // Khiên kích hoạt đỡ đòn!
+        targetPiece.shield -= 1;
+        shieldDefended = true;
+
+        // Tiêu hao 1 charge đi 2 ô của quân tấn công nếu có
+        if (movedPiece.doubleStepCharges && movedPiece.doubleStepCharges > 0) {
+          movedPiece.doubleStepCharges -= 1;
+        }
+
+        return {
+          movedPiece,
+          capturedPiece: null,
+          shieldDefended: true,
+          collectedBuff: null,
+          revivedPiece: null,
+          revivePos: null,
+          usedReviveReserve: false,
+          pieceMoved: false
+        };
+      } else {
+        // Ăn quân bình thường
+        capturedPiece = targetPiece;
+
+        // Kiểm tra xem phe bị ăn có Vé Hồi Sinh Dự Trữ không
+        if (teamBuffs && teamBuffs[targetPiece.side] && teamBuffs[targetPiece.side].reviveReserve > 0) {
+          teamBuffs[targetPiece.side].reviveReserve -= 1;
+          usedReviveReserve = true;
+          // Tự động hồi sinh ngay lập tức tại căn cứ!
+          const spawn = findSpawnPositionForSide(board, targetPiece.side);
+          if (spawn) {
+            targetPiece.shield = 0;
+            targetPiece.doubleStepCharges = 0;
+            board[spawn.row][spawn.col] = targetPiece;
+            revivedPiece = targetPiece;
+            revivePos = spawn;
+          } else if (graveyard && graveyard[targetPiece.side]) {
+            graveyard[targetPiece.side].push(targetPiece);
+          }
+        } else if (graveyard && graveyard[targetPiece.side]) {
+          graveyard[targetPiece.side].push(targetPiece);
+        }
+      }
+    }
+
+    // 2. Thực hiện di chuyển quân trên bàn cờ
+    board[to.row][to.col] = movedPiece;
+    board[from.row][from.col] = null;
+
+    // Tiêu hao 1 charge đi 2 ô nếu có
+    if (movedPiece.doubleStepCharges && movedPiece.doubleStepCharges > 0) {
+      movedPiece.doubleStepCharges -= 1;
+    }
+
+    // 3. Kiểm tra nhặt Buff tại ô đích
+    if (buffs && buffs[to.row] && buffs[to.row][to.col]) {
+      collectedBuff = buffs[to.row][to.col];
+      buffs[to.row][to.col] = null; // Ăn buff -> xoá khỏi ô cờ
+
+      if (collectedBuff === BUFF_TYPES.SHIELD) {
+        // Thêm mạng / Khiên hộ mệnh: cộng dồn tối đa 1 khiên
+        movedPiece.shield = (movedPiece.shield || 0) + 1;
+      } else if (collectedBuff === BUFF_TYPES.DOUBLE_STEP) {
+        // Tốc hành: được đi 2 ô trong 2 lượt di chuyển tiếp theo của quân này
+        movedPiece.doubleStepCharges = (movedPiece.doubleStepCharges || 0) + 2;
+      } else if (collectedBuff === BUFF_TYPES.REVIVE) {
+        // Hồi sinh đồng đội
+        if (graveyard && graveyard[movedPiece.side] && graveyard[movedPiece.side].length > 0) {
+          const pieceToRevive = graveyard[movedPiece.side].pop();
+          pieceToRevive.shield = 0;
+          pieceToRevive.doubleStepCharges = 0;
+          const spawn = findSpawnPositionForSide(board, movedPiece.side);
+          if (spawn) {
+            board[spawn.row][spawn.col] = pieceToRevive;
+            revivedPiece = pieceToRevive;
+            revivePos = spawn;
+          }
+        } else if (teamBuffs && teamBuffs[movedPiece.side]) {
+          // Chưa có quân tử trận -> tích trữ vé hồi sinh
+          teamBuffs[movedPiece.side].reviveReserve = (teamBuffs[movedPiece.side].reviveReserve || 0) + 1;
+        }
+      }
+    }
+
+    return {
+      movedPiece,
+      capturedPiece,
+      shieldDefended: false,
+      collectedBuff,
+      revivedPiece,
+      revivePos,
+      usedReviveReserve,
+      pieceMoved: true
+    };
+  }
+
+  /**
+   * Sinh ngẫu nhiên 1 buff tại ô trống trung lập
+   * @param {Array<Array<Object|null>>} board 
+   * @param {Array<Array<string|null>>} buffs 
+   * @returns {{pos: {row: number, col: number}, type: string}|null}
+   */
+  function spawnRandomBuff(board, buffs) {
+    if (!buffs) return null;
+    const candidates = [];
+    for (let r = 2; r <= 6; r++) {
+      for (let c = 1; c <= 7; c++) {
+        if (!board[r][c] && !buffs[r][c]) {
+          if ((r === BASES.RED.row && c === BASES.RED.col) || (r === BASES.BLUE.row && c === BASES.BLUE.col)) continue;
+          candidates.push({ row: r, col: c });
+        }
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    const types = [BUFF_TYPES.SHIELD, BUFF_TYPES.REVIVE, BUFF_TYPES.DOUBLE_STEP];
+    const chosenType = types[Math.floor(Math.random() * types.length)];
+    buffs[chosen.row][chosen.col] = chosenType;
+
+    return { pos: chosen, type: chosenType };
   }
 
   return {
@@ -349,11 +625,18 @@
     BASES,
     DIRECTIONS,
     BEATS,
+    BUFF_TYPES,
+    BUFF_INFO,
     canCapture,
     isValidPosition,
     posToNotation,
     notationToPos,
     createInitialBoard,
+    createInitialBuffs,
+    cloneBuffs,
+    findSpawnPositionForSide,
+    applyMoveWithBuffs,
+    spawnRandomBuff,
     getValidMoves,
     getAllValidMoves,
     countPieces,

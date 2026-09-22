@@ -75,7 +75,38 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (viewName === 'arena') {
       lobbyView.classList.remove('active');
       arenaView.classList.add('active');
-      renderer.renderBoard(board.grid);
+      renderer.renderBoard(board.grid, board.buffs);
+      updateGraveyardUI();
+    }
+  }
+
+  // Cập nhật giao diện quân tử trận & vé dự trữ
+  function updateGraveyardUI() {
+    const gRedEl = document.getElementById('graveyard-red');
+    const gBlueEl = document.getElementById('graveyard-blue');
+
+    const formatGraveyard = (list, reserve) => {
+      const parts = [];
+      if (reserve > 0) {
+        parts.push(`✨ Dự trữ: ${reserve}`);
+      }
+      if (list && list.length > 0) {
+        const typeCounts = {};
+        list.forEach(p => {
+          const typeName = p.type === 'ROCK' ? '✊' : (p.type === 'PAPER' ? '🖐️' : '✌️');
+          typeCounts[typeName] = (typeCounts[typeName] || 0) + 1;
+        });
+        const summary = Object.entries(typeCounts).map(([t, c]) => `${t}x${c}`).join(' ');
+        parts.push(summary);
+      }
+      return parts.length > 0 ? parts.join(' | ') : 'Chưa có';
+    };
+
+    if (gRedEl) {
+      gRedEl.textContent = formatGraveyard(board.graveyard.RED, board.teamBuffs.RED ? board.teamBuffs.RED.reviveReserve : 0);
+    }
+    if (gBlueEl) {
+      gBlueEl.textContent = formatGraveyard(board.graveyard.BLUE, board.teamBuffs.BLUE ? board.teamBuffs.BLUE.reviveReserve : 0);
     }
   }
 
@@ -88,19 +119,54 @@ document.addEventListener('DOMContentLoaded', () => {
       // Chế độ Offline / AI -> Xử lý trực tiếp tại Client
       const moveResult = board.applyMove(from, to);
 
-      if (moveResult.capturedPiece) {
+      // Xử lý hiệu ứng âm thanh & thông báo Buffs
+      if (moveResult.shieldDefended) {
+        sounds.playShieldBreak();
+        showToast(`🛡️ [Phe ${currentTurn === GameRules.SIDES.RED ? 'Đỏ' : 'Xanh'}] Khiên hộ mệnh đã đỡ một đòn chí mạng!`, 'warning');
+      } else if (moveResult.capturedPiece) {
         sounds.playCapture();
       } else {
         sounds.playMove();
       }
 
-      renderer.renderBoard(board.grid);
+      if (moveResult.collectedBuff) {
+        sounds.playBuffPickup();
+        const buffInfo = GameRules.BUFF_INFO[moveResult.collectedBuff];
+        const buffName = buffInfo ? `${buffInfo.symbol} ${buffInfo.name}` : moveResult.collectedBuff;
+        showToast(`✨ [Phe ${currentTurn === GameRules.SIDES.RED ? 'Đỏ' : 'Xanh'}] nhặt Buff: ${buffName}!`, 'success');
+      }
+
+      if (moveResult.revivedPiece) {
+        sounds.playRevive();
+        const pieceTypeStr = moveResult.revivedPiece.type === 'ROCK' ? 'Đấm' : (moveResult.revivedPiece.type === 'PAPER' ? 'Lá' : 'Kéo');
+        const posNotation = moveResult.revivePos ? GameRules.posToNotation(moveResult.revivePos.row, moveResult.revivePos.col) : 'căn cứ';
+        showToast(`👼 [Phe ${currentTurn === GameRules.SIDES.RED ? 'Đỏ' : 'Xanh'}] Hồi sinh quân ${pieceTypeStr} tại ${posNotation}!`, 'success');
+      } else if (moveResult.usedReviveReserve) {
+        sounds.playRevive();
+        showToast(`👼 Vé Hồi Sinh Dự Trữ đã hồi sinh quân cờ vừa bị ăn tại căn cứ!`, 'success');
+      }
+
+      if (moveResult.spawnedBuff) {
+        const buffInfo = GameRules.BUFF_INFO[moveResult.spawnedBuff.type];
+        showToast(`${buffInfo ? buffInfo.symbol : '⭐'} Một Buff mới đã xuất hiện trên bàn cờ!`, 'info');
+      }
+
+      renderer.renderBoard(board.grid, board.buffs);
       renderer.highlightLastMove(from, to);
+      updateGraveyardUI();
 
       // Ghi lịch sử
       const notationFrom = GameRules.posToNotation(from.row, from.col);
       const notationTo = GameRules.posToNotation(to.row, to.col);
-      addMoveToHistory(currentTurn, `${notationFrom} ➔ ${notationTo}${moveResult.capturedPiece ? ' (Ăn quân)' : ''}`);
+      let actionText = `${notationFrom} ➔ ${notationTo}`;
+      if (moveResult.shieldDefended) actionText += ' (🛡️ Khiên đỡ)';
+      else if (moveResult.capturedPiece) actionText += ' (Ăn quân)';
+      if (moveResult.collectedBuff) {
+        const info = GameRules.BUFF_INFO[moveResult.collectedBuff];
+        actionText += ` [${info ? info.symbol : 'Buff'}]`;
+      }
+      if (moveResult.revivedPiece) actionText += ' (👼 Hồi sinh)';
+      addMoveToHistory(currentTurn, actionText);
 
       // Kiểm tra thắng thua
       const nextSide = currentTurn === GameRules.SIDES.RED ? GameRules.SIDES.BLUE : GameRules.SIDES.RED;
@@ -128,25 +194,57 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 5. THỰC THI NƯỚC ĐI CỦA BOT AI
   function executeAiTurn() {
-    const bestMove = ClientRules.getBestAiMove(board.grid, GameRules.SIDES.BLUE);
+    const bestMove = ClientRules.getBestAiMove(board.grid, GameRules.SIDES.BLUE, board.buffs, board.graveyard);
     if (!bestMove) {
       handleGameOver(GameRules.SIDES.RED, 'Bot AI không còn nước đi hợp lệ! Bạn đã chiến thắng!');
       return;
     }
 
     const moveResult = board.applyMove(bestMove.from, bestMove.to);
-    if (moveResult.capturedPiece) {
+
+    if (moveResult.shieldDefended) {
+      sounds.playShieldBreak();
+      showToast('🛡️ [Phe Xanh] Khiên hộ mệnh đã đỡ một đòn chí mạng!', 'warning');
+    } else if (moveResult.capturedPiece) {
       sounds.playCapture();
     } else {
       sounds.playMove();
     }
 
-    renderer.renderBoard(board.grid);
+    if (moveResult.collectedBuff) {
+      sounds.playBuffPickup();
+      const buffInfo = GameRules.BUFF_INFO[moveResult.collectedBuff];
+      showToast(`✨ [Bot AI] đã nhặt được Buff: ${buffInfo ? buffInfo.symbol + ' ' + buffInfo.name : 'Buff'}!`, 'info');
+    }
+
+    if (moveResult.revivedPiece) {
+      sounds.playRevive();
+      showToast('👼 [Bot AI] đã hồi sinh 1 quân cờ về căn cứ!', 'info');
+    } else if (moveResult.usedReviveReserve) {
+      sounds.playRevive();
+      showToast('👼 Vé Hồi Sinh của Bot AI đã kích hoạt cứu quân tử trận!', 'info');
+    }
+
+    if (moveResult.spawnedBuff) {
+      const buffInfo = GameRules.BUFF_INFO[moveResult.spawnedBuff.type];
+      showToast(`${buffInfo ? buffInfo.symbol : '⭐'} Một Buff mới đã xuất hiện trên bàn cờ!`, 'info');
+    }
+
+    renderer.renderBoard(board.grid, board.buffs);
     renderer.highlightLastMove(bestMove.from, bestMove.to);
+    updateGraveyardUI();
 
     const notationFrom = GameRules.posToNotation(bestMove.from.row, bestMove.from.col);
     const notationTo = GameRules.posToNotation(bestMove.to.row, bestMove.to.col);
-    addMoveToHistory(GameRules.SIDES.BLUE, `${notationFrom} ➔ ${notationTo}${moveResult.capturedPiece ? ' (Ăn quân)' : ''}`);
+    let actionText = `${notationFrom} ➔ ${notationTo}`;
+    if (moveResult.shieldDefended) actionText += ' (🛡️ Khiên đỡ)';
+    else if (moveResult.capturedPiece) actionText += ' (Ăn quân)';
+    if (moveResult.collectedBuff) {
+      const info = GameRules.BUFF_INFO[moveResult.collectedBuff];
+      actionText += ` [${info ? info.symbol : 'Buff'}]`;
+    }
+    if (moveResult.revivedPiece) actionText += ' (👼 Hồi sinh)';
+    addMoveToHistory(GameRules.SIDES.BLUE, actionText);
 
     // Kiểm tra kết thúc sau nước đi của AI
     const gameOverResult = ClientRules.checkGameOver(board.grid, GameRules.SIDES.RED);
@@ -247,9 +345,10 @@ document.addEventListener('DOMContentLoaded', () => {
     board.reset();
     currentTurn = GameRules.SIDES.RED;
     if (moveHistoryListEl) moveHistoryListEl.innerHTML = '';
-    renderer.renderBoard(board.grid);
+    renderer.renderBoard(board.grid, board.buffs);
     renderer.clearHighlights();
     updateTurnUI();
+    updateGraveyardUI();
     controls.setGameState(currentTurn, currentMode === CONFIG.GAME_MODES.OFFLINE_2P ? null : mySide, true);
   }
 
@@ -309,8 +408,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     board.setState(data.room.board);
     currentTurn = data.room.currentTurn;
-    renderer.renderBoard(board.grid);
+    renderer.renderBoard(board.grid, board.buffs);
     updateTurnUI();
+    updateGraveyardUI();
 
     controls.setGameState(currentTurn, mySide === 'SPECTATOR' ? null : mySide, mySide !== 'SPECTATOR');
     showView('arena');
@@ -321,8 +421,9 @@ document.addEventListener('DOMContentLoaded', () => {
   socketClient.on('game:start', (data) => {
     board.setState(data.room.board);
     currentTurn = data.room.currentTurn;
-    renderer.renderBoard(board.grid);
+    renderer.renderBoard(board.grid, board.buffs);
     updateTurnUI();
+    updateGraveyardUI();
     controls.setGameState(currentTurn, mySide === 'SPECTATOR' ? null : mySide, mySide !== 'SPECTATOR');
     showToast(data.message, 'success');
   });
@@ -339,13 +440,23 @@ document.addEventListener('DOMContentLoaded', () => {
   socketClient.on('game:move_success', (data) => {
     const { moveRecord, board: serverBoard, nextTurn, turnTimeRemaining } = data;
     board.setState(serverBoard);
-    renderer.renderBoard(board.grid);
+    renderer.renderBoard(board.grid, board.buffs);
     renderer.highlightLastMove(moveRecord.from, moveRecord.to);
+    updateGraveyardUI();
 
-    if (moveRecord.capturedPiece) {
+    if (moveRecord.shieldDefended) {
+      sounds.playShieldBreak();
+    } else if (moveRecord.capturedPiece) {
       sounds.playCapture();
     } else {
       sounds.playMove();
+    }
+
+    if (moveRecord.collectedBuff) {
+      sounds.playBuffPickup();
+    }
+    if (moveRecord.revivedPiece) {
+      sounds.playRevive();
     }
 
     addMoveToHistory(moveRecord.side, moveRecord.notation);
@@ -366,9 +477,10 @@ document.addEventListener('DOMContentLoaded', () => {
   socketClient.on('game:rematch_start', (data) => {
     board.setState(data.room.board);
     currentTurn = data.room.currentTurn;
-    renderer.renderBoard(board.grid);
+    renderer.renderBoard(board.grid, board.buffs);
     renderer.clearHighlights();
     updateTurnUI();
+    updateGraveyardUI();
     gameOverModal.classList.remove('active');
     showToast(data.message, 'success');
   });

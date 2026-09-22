@@ -25,11 +25,15 @@ class ClientRules {
 
   /**
    * Thuật toán AI Bot lựa chọn nước đi thông minh
+   * Có tích hợp tính toán nhặt Buffs (Shield, Revive, Double Step) và tận dụng bước nhảy 2 ô
+   * 
    * @param {Array<Array<Object|null>>} boardGrid 
    * @param {string} botSide - Thường là 'BLUE'
+   * @param {Array<Array<string|null>>} [buffsGrid]
+   * @param {Object} [graveyard]
    * @returns {{ from: {row, col}, to: {row, col} } | null}
    */
-  static getBestAiMove(boardGrid, botSide) {
+  static getBestAiMove(boardGrid, botSide, buffsGrid = null, graveyard = null) {
     const allMoves = GameRules.getAllValidMoves(boardGrid, botSide);
     if (allMoves.length === 0) return null;
 
@@ -44,19 +48,38 @@ class ClientRules {
         score += 1000;
       }
 
-      // 2. Nếu ăn được quân đối phương -> Điểm cao (+50 điểm)
+      // 2. Nếu ăn được quân đối phương
       if (move.isCapture) {
-        score += 50;
+        const targetPiece = boardGrid[move.to.row][move.to.col];
+        if (targetPiece && targetPiece.shield && targetPiece.shield > 0) {
+          // Đối phương có khiên -> Đòn đánh phá vỡ khiên nhưng chưa giết được
+          score += 25;
+        } else {
+          score += 55;
+        }
       }
 
-      // 3. Tiến gần hơn tới căn cứ mục tiêu (khoảng cách Manhattan)
+      // 3. Đánh giá nhặt Buff trên bàn cờ
+      if (buffsGrid && buffsGrid[move.to.row] && buffsGrid[move.to.row][move.to.col]) {
+        const buffType = buffsGrid[move.to.row][move.to.col];
+        if (buffType === GameRules.BUFF_TYPES.SHIELD) {
+          score += 40; // Nhặt khiên cực kỳ an toàn
+        } else if (buffType === GameRules.BUFF_TYPES.REVIVE) {
+          const hasFallen = graveyard && graveyard[botSide] && graveyard[botSide].length > 0;
+          score += hasFallen ? 60 : 25; // Ưu tiên rất cao nếu đã mất quân
+        } else if (buffType === GameRules.BUFF_TYPES.DOUBLE_STEP) {
+          score += 35; // Tăng tầm di chuyển
+        }
+      }
+
+      // 4. Tiến gần hơn tới căn cứ mục tiêu (khoảng cách Manhattan)
       const currentDist = Math.abs(move.from.row - targetBase.row) + Math.abs(move.from.col - targetBase.col);
       const nextDist = Math.abs(move.to.row - targetBase.row) + Math.abs(move.to.col - targetBase.col);
       if (nextDist < currentDist) {
-        score += 10;
+        score += 12;
       }
 
-      // 4. Tránh bị ăn ở ô đích (giả lập 1 bước tiếp theo)
+      // 5. Tránh bị ăn ở ô đích (giả lập 1 bước tiếp theo)
       const simulatedBoard = GameRules.cloneBoard(boardGrid);
       simulatedBoard[move.to.row][move.to.col] = move.piece;
       simulatedBoard[move.from.row][move.from.col] = null;
@@ -66,7 +89,11 @@ class ClientRules {
       const willBeCaptured = oppResponses.some(oppMove => oppMove.to.row === move.to.row && oppMove.to.col === move.to.col);
 
       if (willBeCaptured) {
-        score -= 40;
+        if (move.piece && move.piece.shield && move.piece.shield > 0) {
+          score -= 15; // Có khiên bảo vệ nên bớt sợ bị ăn
+        } else {
+          score -= 45; // Tránh nguy cơ tử trận
+        }
       }
 
       // Thêm chút ngẫu nhiên để Bot không đi theo lối mòn

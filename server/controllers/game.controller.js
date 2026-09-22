@@ -41,7 +41,12 @@ class GameController {
       from,
       to,
       moveResult.movedPiece,
-      moveResult.capturedPiece
+      moveResult.capturedPiece,
+      {
+        shieldDefended: moveResult.shieldDefended,
+        collectedBuff: moveResult.collectedBuff,
+        revivedPiece: moveResult.revivedPiece
+      }
     );
 
     // 4. Xác định phe tiếp theo

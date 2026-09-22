@@ -162,10 +162,23 @@ class Room {
   /**
    * Ghi nhận một nước đi vào lịch sử
    */
-  recordMove(from, to, movedPiece, capturedPiece) {
+  recordMove(from, to, movedPiece, capturedPiece, extraData = {}) {
     this.lastActivityAt = Date.now();
     const fromNotation = posToNotation(from.row, from.col);
     const toNotation = posToNotation(to.row, to.col);
+
+    let notationText = `${fromNotation} -> ${toNotation}`;
+    if (extraData.shieldDefended) {
+      notationText += ' (🛡️ Khiên đỡ)';
+    } else if (capturedPiece) {
+      notationText += ' (x)';
+    }
+    if (extraData.collectedBuff) {
+      notationText += ` [${extraData.collectedBuff}]`;
+    }
+    if (extraData.revivedPiece) {
+      notationText += ' (👼 Hồi sinh)';
+    }
 
     const moveRecord = {
       index: this.moveHistory.length + 1,
@@ -175,8 +188,11 @@ class Room {
       to,
       fromNotation,
       toNotation,
-      notation: `${fromNotation} -> ${toNotation}${capturedPiece ? ' (x)' : ''}`,
+      notation: notationText,
       capturedPiece: capturedPiece ? { type: capturedPiece.type, side: capturedPiece.side } : null,
+      shieldDefended: Boolean(extraData.shieldDefended),
+      collectedBuff: extraData.collectedBuff || null,
+      revivedPiece: extraData.revivedPiece ? { type: extraData.revivedPiece.type, side: extraData.revivedPiece.side } : null,
       timestamp: Date.now()
     };
 
